@@ -59,25 +59,16 @@ async def obj_post(model: str, data: Request):
 @app.put("/api/{model}/{uid}")
 async def obj_change(model: str, uid: int, data: Request):
     obj_to_change = entity_dict[model]()
-    print(2, obj_to_change.data)
     if obj_to_change.get_obj(uid=uid):
-        print(3, obj_to_change.data)
         obj_to_change.load_obj(uid)
-        print(4, obj_to_change.data)
         change = json.loads(await data.json())
-        print(5, obj_to_change.data)
         for k in change.keys():
             if k in obj_to_change.fields:
-                print(6, obj_to_change.data)
                 obj_to_change.data[k] = change[k]
-                print(7, obj_to_change.data)
         final = obj_to_change.push_update()
-        print(8, obj_to_change.data)
         if final:
-            print(9, obj_to_change.data)
             result = obj_to_change.obj2json()
         else:
-            print(10, obj_to_change.data)
             result = json.dumps({"data": "Nothing happened"})
     else:
         result = json.dumps({"data": "failed"})
@@ -113,7 +104,7 @@ async def send_mail(uid: int, data: Request):
     return Response(content=result, media_type="application/json")
 
 
-# TESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTING
+# TESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTINGTESTING
 @app.get("/test/post/user/{name}")  # OK
 async def post_user(name: str):
     new_data = User()
@@ -170,13 +161,13 @@ async def test_delete(model: str, uid: int):
 @app.get("/test/put/{model}/{uid}")
 async def test_put(model: str, uid: int):
     if model == "users":
-        new_data = json.dumps({"email": "ivan.govnov@yandex.ru"})  # OK
+        new_data = json.dumps({"email": "ivan.invanov@yandex.ru"})  # OK
     elif model == "articles":
         new_data = json.dumps({"name": "Actually, I don't like chairs."})  # OK
     elif model == "videos":
         new_data = json.dumps({"name": "Actually, dungeon synth sucks!"})  # OK
     else:
-        new_data = json.dumps({"comment": "GOVNO! OTPISKA!"})  # OK
+        new_data = json.dumps({"comment": "UG! OTPISKA!"})  # OK
     result = client.put(f"api/{model}/{uid}", json=new_data)
     return result.json()
 

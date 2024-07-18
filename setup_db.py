@@ -60,6 +60,3 @@ if create_tables:
 def purge_database():
     q = "TRUNCATE users, articles, videos, comments"
     cursor.execute(q)
-
-
-purge_database()

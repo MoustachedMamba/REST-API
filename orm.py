@@ -9,8 +9,10 @@ from math import ceil
 from email_validator import validate_email, EmailNotValidError
 from email.mime.text import MIMEText
 
+
 config = configparser.ConfigParser()
 config.read("config.ini")
+
 
 try:
     conn = psycopg2.connect(dbname=config["Config"]["dbname"],
@@ -23,12 +25,15 @@ try:
     conn.autocommit = True
 except psycopg2.Error as e:
     print(e)
-    print("Подключиться к БД не получилось, всё пропало, выключаем нахуй.")
+    print("Не удалось подключиться к БД. Выключаем.")
     exit()
 
-
-smtpObj = smtplib.SMTP_SSL(config["Email"]["host"] + ":" + config["Email"]["port"])
-#smtpObj.login(config["Email"]["login"], config["Email"]["password"])
+try:
+    smtpObj = smtplib.SMTP_SSL(config["Email"]["host"] + ":" + config["Email"]["port"])
+    smtpObj.login(config["Email"]["login"], config["Email"]["password"])
+except Exception as err:
+    print(f"Failed to login into {config['Email']['email']}, will be unable to sand emails!")
+    print(err)
 
 
 class APIEntity:
@@ -59,17 +64,15 @@ class APIEntity:
 
     def check_fields(self):  # Checks if self.data contains only keys listed in self.fields.
         unchecked_data = self.data.copy()
-        print("Unchecked:", unchecked_data)
-        print("ROD", self.data)
+
         self.data = dict()
         for k in unchecked_data.keys():
             if k not in self.fields and k != "id":
-                print("Удалили ненужный ключ:", k, "значение", unchecked_data[k])
+                print("Удалили лишний ключ:", k, "значение", unchecked_data[k])
             else:
                 self.data[k] = unchecked_data[k]
-        print("AFTER:", self.data)
 
-    def check_values(self):  # TODO: Add more checks
+    def check_values(self):
         for k in self.data.keys():
             self.data[k] = self.sanitize_db_output(self.data[k])
 
@@ -101,11 +104,15 @@ class APIEntity:
     def push_update(self):  # Push changes made in object to DB. Returns False if failed, True if succeeded.
         self.check_fields()
         self.check_values()
+
         if not self.get_obj():
             return False
+
         d = self.get_obj()
+
         if not self.validate_data():
             return False
+
         fields_to_update = []
         for i in range(len(self.fields)):
             if self.data[self.fields[i]] != d[i]:
@@ -119,27 +126,31 @@ class APIEntity:
                 value_setting.append(f + " = " + "null")
             else:
                 value_setting.append(f + " = '" + str(self.data[f]) + "'")
+
         value_setting = ", ".join(value_setting)
         if not value_setting:
-            print("Nothing to change?")
+            print("Nothing to change.")
             return False
         query = f"UPDATE {self.table} SET {value_setting} WHERE {self.id_field} = {self.data['id']}"
         try:
             cursor.execute(query)
             return True
-        except psycopg2.Error as e:
-            print(e)
+        except psycopg2.Error as err:
+            print(err)
             return False
 
     def insert_obj(self):  # Adds object to DB. Returns False if fails to do so.
         self.check_fields()
+
         if self.data["id"] is not None:
             if self.get_obj():  # There is already object with such ID in DB, aborting.
                 print("There is already object with this ID in DB.")
                 return False
+
         if not self.validate_data():
             print("Data validation failed, aborting.")
             return False
+
         columns = ", ".join(self.fields)
         values = []
         for k in self.fields:
@@ -148,6 +159,7 @@ class APIEntity:
                 values.append(str(current_value))
             else:
                 values.append("'" + str(current_value) + "'")
+
         values = ", ".join(values)
         query = f"INSERT INTO {self.table} ({columns}) VALUES ({values}) RETURNING {self.id_field}"
 
@@ -162,8 +174,10 @@ class APIEntity:
     def delete_obj(self, uid=None):  # Deletes object from database, returns False if fails.
         if uid is not None:
             self.data["id"] = uid
+
         if not self.get_obj(uid=self.data["id"]):
             return False
+
         query = f'DELETE FROM {self.table} WHERE {self.id_field} = {self.data["id"]}'
         try:
             cursor.execute(query)
@@ -196,17 +210,16 @@ class User(APIEntity):
         self.data["password"] = bcrypt.hashpw(self.data["password"].encode(), bcrypt.gensalt()).decode("utf-8")
         return super().insert_obj()
 
-    def push_update(self):  # Вынужденный копипаст
+    def push_update(self):  # Вынужденный копипаст, нужно хэшировать пароль
         self.check_fields()
         self.check_values()
 
         if not self.get_obj():
-            print("Skill issue")
             return False
         d = self.get_obj()
 
         if not self.validate_data():
-            print("Validation problem")
+            print("Validation problem.")
             return False
 
         fields_to_update = []
@@ -225,38 +238,45 @@ class User(APIEntity):
                 value_setting.append(f + " = " + "null")
             else:
                 value_setting.append(f + " = '" + str(self.data[f]) + "'")
-        print(value_setting)
+
         value_setting = ", ".join(value_setting)
         if not value_setting:
             print("Value setting problem")
             return False
+
         query = f"UPDATE {self.table} SET {value_setting} WHERE {self.id_field} = {self.data['id']}"
         try:
-            print('pizad')
             cursor.execute(query)
             return True
-        except psycopg2.Error as e:
-            print(e)
-            print("A HU ET")
+        except psycopg2.Error as err:
+            print(err)
             return False
 
     def send_email(self, subject: str, content: str):
         if self.validate_data():
             print("Data validation failed, aborting.")
             return False
-        address = self.data["email"]
 
+        address = self.data["email"]
         msg = MIMEText(content, "plain")
         msg['Subject'] = subject
         msg['From'] = config["Email"]["email"]
-        smtpObj.sendmail(config["Email"]["email"], address, msg.as_string())
-        return True
+
+        try:
+            smtpObj.sendmail(config["Email"]["email"], address, msg.as_string())
+            return True
+        except Exception as err:
+            print("Failed to send mail!")
+            print(err)
+            return False
 
     def check_password(self, user_pw, uid=None):
         if uid is not None:
             self.data["id"] = uid
+
         if not self.get_obj(self.data["id"]):
             return False
+
         hashed_pw = User(uid=self.data["id"]).data["password"].encode("utf-8")
         return bcrypt.checkpw(user_pw.encode("utf-8"), hashed_pw)
 
@@ -290,6 +310,10 @@ class Video(APIEntity):
 class Comment(APIEntity):
     table = "Comments"
     fields = ("user_id", "comment", "media_type", "media_id")
+    comment_validation_dict = {
+        "vid": Video,
+        "art": Article
+    }
 
     def validate_data(self):
         u = User()
@@ -298,10 +322,7 @@ class Comment(APIEntity):
         if self.data["media_type"] not in ("vid", "art"):
             return False
 
-        comment_validation_dict = {
-            "vid": Video,
-            "art": Article}
-        i = comment_validation_dict[self.data["media_type"]]()
+        i = self.comment_validation_dict[self.data["media_type"]]()
         if not i.get_obj(self.data["media_id"]):
             return False
         return super().validate_data()
@@ -318,6 +339,7 @@ entity_dict = {
 def get_collection(table: str, limit: int, page: int, search_filter: dict):
     if search_filter is None:
         search_filter = dict()
+
     query = f"SELECT COUNT(*) FROM {table}"
     cursor.execute(query)
     row_count = cursor.fetchone()[0]
@@ -325,7 +347,6 @@ def get_collection(table: str, limit: int, page: int, search_filter: dict):
     query = f"SELECT id FROM {table} ORDER BY id OFFSET {limit * (page - 1)} ROWS FETCH NEXT {limit} ROWS ONLY"
     cursor.execute(query)
     fetch = cursor.fetchall()
-    print(fetch)
     collection = []
     for i in fetch:
         entity = entity_dict[table](uid=i[0])
